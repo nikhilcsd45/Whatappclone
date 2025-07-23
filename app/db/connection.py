@@ -1,10 +1,13 @@
-import os
-from pymongo import MongoClient
+
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
 from dotenv import load_dotenv
-
 load_dotenv()
-mongo_url = os.getenv("MONGO_URI")
-
-client = MongoClient(mongo_url)
-db = client["whatappdb"]
-messages_collection = db["wptextdb"]
+import os
+MongoUri=os.getenv("MONGO_URI")
+client = MongoClient(MongoUri, server_api=ServerApi('1'))
+try:
+    client.admin.command('ping')
+    print("Pinged your deployment. You successfully connected to MongoDB!")
+except Exception as e:
+    print(e)
