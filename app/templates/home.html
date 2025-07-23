@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Enter User ID</title>
+</head>
+<body>
+  <h2>Enter 10-digit User ID</h2>
+  {% if error %}
+    <p style="color: red;">{{ error }}</p>
+  {% endif %}
+  <form method="post" action="/start-chat">
+    <input type="text" name="user_id" placeholder="Enter 10-digit ID" maxlength="10" required>
+    <button type="submit">Start Chat</button>
+  </form>
+</body>
+</html>
