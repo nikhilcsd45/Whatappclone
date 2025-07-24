@@ -7,11 +7,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from app.models.models import User
 from app.db import connection
+from app.router.chatrouter import chat_router
 app = FastAPI()
-@app.get("/")
-def hello():
-  return "mess"
-
+app.include_router(chat_router)
 app.include_router(auth_router)
 app.add_middleware(
     CORSMiddleware,

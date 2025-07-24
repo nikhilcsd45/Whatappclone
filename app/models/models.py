@@ -26,18 +26,17 @@ class Message(Document):
     sender = ReferenceField(User, required=True)
     receiver = ReferenceField(User, required=True)
     content = StringField(required=True)
-    seen = DateTimeField()
+    last_seen = DateTimeField()
     timestamp = DateTimeField(default=datetime.utcnow)
     chat = ObjectIdField(required=True)  # Reference to Chat
     delivered=BooleanField(default=False)
     meta = {'collection': 'messages'}
-
-
 class Chat(Document):
-    members = ListField(ReferenceField(User), required=True)
+    members = ListField(StringField(), required=True)  # ⬅️ Just store user IDs (as strings)
     is_group_chat = BooleanField(default=False)
-    group_name = StringField()
-    group_profile = StringField(default="default_group.png")  # path or URL to image
-    latest_message = ReferenceField(Message)
+    group_name = StringField(default="None")
+    group_profile = StringField(default="default_group.png")
+    latest_message = StringField(default="None")  # Optional: change later if needed
 
     meta = {'collection': 'chats'}
+
