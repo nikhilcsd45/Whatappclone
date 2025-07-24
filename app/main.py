@@ -1,3 +1,4 @@
+import json
 from typing import Dict
 from fastapi import FastAPI, WebSocket,Request,HTTPException
 from app.router.authrouter import auth_router
@@ -5,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from app.models.models import User
-
+from app.db import connection
 app = FastAPI()
 app = FastAPI()
 @app.get("/")
@@ -21,40 +22,37 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Store connected clients
+# Store connected clients 
 connected_clients: Dict[str, WebSocket] = {}
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    number = None  # Initialize in outer scope so we can access it on disconnect
 
     try:
-        # Wait for the first message which should be the number (user ID)
-        number = await websocket.receive_text()
-        print(f"[INIT] Received number: {number}")
+        # First message should be a JSON string like {"type":"connect", "user":"1234567899"}
+        user_info_str = await websocket.receive_text()
+        user_info = json.loads(user_info_str)
+        number = user_info["user"]
 
-        # Check if this number already exists
         if number in connected_clients:
             print(f"[UPDATE] Existing user '{number}' reconnected. Updating WebSocket.")
         else:
             print(f"[NEW] New user '{number}' connected.")
 
-        # Store or update the socket
         connected_clients[number] = websocket
         print(f"[CONNECTED USERS] {list(connected_clients.keys())}")
 
-        # Listen for chat messages now
+        # Listen for incoming messages
         while True:
             data = await websocket.receive_text()
             print(f"[RECEIVED] from {number}: {data}")
-
-            # Echo for testing
             await websocket.send_text(f"Echo: {data}")
 
     except WebSocketDisconnect:
         print(f"[DISCONNECTED] user: {number}")
-        connected_clients.pop(number, None)
-
-
+        if number:
+            connected_clients.pop(number, None)
 
 
 @app.post("/getUser")
@@ -62,12 +60,14 @@ async def find_user(request:Request):
     form = await request.json()
     print("form:", form)
 
-    phone_num = form.get("number")
+    phone_num = form.get("phone_number")
+    print("phone_num:",phone_num)
     if not phone_num:
         raise HTTPException(status_code=400, detail="Phone number and password are required")
 
     # ✅ Check if user exists (phone number matches)
     user = User.objects(phone_number=phone_num).first()
+    print("user:",user)
 
     if not user:
         raise HTTPException(status_code=404, detail="Number not Registered")
@@ -78,69 +78,11 @@ async def find_user(request:Request):
     user_dict["_id"] = str(user_dict["_id"])
 
     return {
-        "message": "Login successful",
+        "message": "user found ",
         "user": user_dict
     }
 
 
-
-
-
-
-
-
-
-
-# templates = Jinja2Templates(directory="templates")
-# app.mount("/static", StaticFiles(directory="static"), name="static")
-# @app.get("/", response_class=HTMLResponse)
-# def home(request: Request):
-#     print("Rendering home page")
-#     return templates.TemplateResponse("home.html", {"request": request})
-
-# @app.post("/start-chat", response_class=HTMLResponse)
-# async def start_chat(request: Request):
-#     form = await request.form()
-#     user_id = form.get("user_id")
-#     print("Received user_id:", user_id)
-#     if user_id and len(user_id) == 10 and user_id.isdigit():
-#         print("Valid user_id, rendering chat page")
-        
-#         return templates.TemplateResponse("chat.html", {"request": request, "user_id": user_id})
-#     print("Invalid user_id")
-#     return templates.TemplateResponse("home.html", {"request": request, "error": "Invalid ID"})
-
-# # WebSocket and API Handler
-# chat_router = app
-# active_connections = {}
-
-# @chat_router.websocket("/ws/{user_id}")
-# async def websocket_active(websocket: WebSocket, user_id: str):
-#     print(f"[CONNECT] user_id={user_id}")
-#     await websocket.accept()
-#     active_connections[user_id] = websocket
-#     print(f"[ACTIVE USERS] {list(active_connections.keys())}")
-    
-#     try:
-#         while True:
-#             data = await websocket.receive_text()
-#             print(f"[RECEIVED] from {user_id}: {data}")
-#             await websocket.send_text(f"{user_id}: {data}")
-#             print(f"[SENT] echo to {user_id}")
-#     except WebSocketDisconnect:
-#         print(f"[DISCONNECT] user_id={user_id}")
-#         if user_id in active_connections:
-#             del active_connections[user_id]
-#         print(f"[ACTIVE USERS AFTER DISCONNECT] {list(active_connections.keys())}")
-
-# # API to check if a target user is online
-# @chat_router.get("/check-user/{target_id}")
-# async def check_user(target_id: str):
-#     print(f"[CHECK USER] target_id={target_id}")
-#     if target_id in active_connections:
-#         print(f"[CHECK RESULT] {target_id} is online")
-#         return {"status": "online"}
-#     else:
-#         print(f"[CHECK RESULT] {target_id} is offline")
-#         return JSONResponse(content={"status": "offline"}, status_code=404)
-
+# @app.post("/chat")
+# async def chat(websoket:WebSocket):
+  
