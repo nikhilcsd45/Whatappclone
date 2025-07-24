@@ -15,7 +15,9 @@ class User(Document):
     prechats = ListField(ObjectIdField())  # List of ObjectIds of other users
     profile_pic = StringField(default="default_profile.png")  # Path or URL to default pic
 
-    meta = {'collection': 'users'}
+    meta = {
+        'collection': 'users',  # Make sure alias matches your connect()
+    }
 
 
 

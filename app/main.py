@@ -1,6 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from app.router.authrouter import auth_router
 from fastapi.middleware.cors import CORSMiddleware
+from app.db import connection
 app = FastAPI()
 
 app.add_middleware(
@@ -13,6 +14,13 @@ app.add_middleware(
 @app.get("/")
 def hello():
   return "mess"
+
+
+# @auth_router.websocket("/ws/chat")
+# async def websocket_endpoint(websocket: WebSocket):
+#     await websocket.accept()
+#     await websocket.send_text("Hello WebSocket")
+
 
 app.include_router(auth_router)
 
