@@ -1,18 +1,18 @@
-from fastapi import FastAPI, WebSocket
+from typing import Dict
+from fastapi import FastAPI, WebSocket,Request,HTTPException
 from app.router.authrouter import auth_router
 from fastapi.middleware.cors import CORSMiddleware
-from app.db import connection
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from app.models.models import User
+
+app = FastAPI()
 app = FastAPI()
 @app.get("/")
 def hello():
   return "mess"
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-
-app = FastAPI()
-
-# 👇 Enable CORS to allow React frontend to connect
+app.include_router(auth_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, use your actual frontend URL
@@ -22,32 +22,65 @@ app.add_middleware(
 )
 
 # Store connected clients
-connected_clients = []
-
+connected_clients: Dict[str, WebSocket] = {}
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    connected_clients.append(websocket)
-    a=connected_clients[-1]
-    print("connected_client:",a )
-    print("Client connected ✅")
+
     try:
+        # Wait for the first message which should be the number (user ID)
+        number = await websocket.receive_text()
+        print(f"[INIT] Received number: {number}")
+
+        # Check if this number already exists
+        if number in connected_clients:
+            print(f"[UPDATE] Existing user '{number}' reconnected. Updating WebSocket.")
+        else:
+            print(f"[NEW] New user '{number}' connected.")
+
+        # Store or update the socket
+        connected_clients[number] = websocket
+        print(f"[CONNECTED USERS] {list(connected_clients.keys())}")
+
+        # Listen for chat messages now
         while True:
             data = await websocket.receive_text()
-            print(f"Received: {data}")
-            # Broadcast to all clients
-            for client in connected_clients:
-                await client.send_text(data)
+            print(f"[RECEIVED] from {number}: {data}")
+
+            # Echo for testing
+            await websocket.send_text(f"Echo: {data}")
+
     except WebSocketDisconnect:
-        connected_clients.remove(websocket)
-        print("Client disconnected ❌")
-    return 
-
-app.include_router(auth_router)
+        print(f"[DISCONNECTED] user: {number}")
+        connected_clients.pop(number, None)
 
 
 
 
+@app.post("/getUser")
+async def find_user(request:Request):
+    form = await request.json()
+    print("form:", form)
+
+    phone_num = form.get("number")
+    if not phone_num:
+        raise HTTPException(status_code=400, detail="Phone number and password are required")
+
+    # ✅ Check if user exists (phone number matches)
+    user = User.objects(phone_number=phone_num).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="Number not Registered")
+
+    # ✅ Return success response
+    user_dict = user.to_mongo().to_dict()
+    user_dict.pop("hashed_password", None)
+    user_dict["_id"] = str(user_dict["_id"])
+
+    return {
+        "message": "Login successful",
+        "user": user_dict
+    }
 
 
 
