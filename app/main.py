@@ -3,24 +3,45 @@ from app.router.authrouter import auth_router
 from fastapi.middleware.cors import CORSMiddleware
 from app.db import connection
 app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], 
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 @app.get("/")
 def hello():
   return "mess"
 
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
-# @auth_router.websocket("/ws/chat")
-# async def websocket_endpoint(websocket: WebSocket):
-#     await websocket.accept()
-#     await websocket.send_text("Hello WebSocket")
+app = FastAPI()
 
+# 👇 Enable CORS to allow React frontend to connect
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, use your actual frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Store connected clients
+connected_clients = []
+
+@app.websocket("/ws/chat")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    connected_clients.append(websocket)
+    a=connected_clients[-1]
+    print("connected_client:",a )
+    print("Client connected ✅")
+    try:
+        while True:
+            data = await websocket.receive_text()
+            print(f"Received: {data}")
+            # Broadcast to all clients
+            for client in connected_clients:
+                await client.send_text(data)
+    except WebSocketDisconnect:
+        connected_clients.remove(websocket)
+        print("Client disconnected ❌")
+    return 
 
 app.include_router(auth_router)
 
