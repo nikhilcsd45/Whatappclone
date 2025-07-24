@@ -16,7 +16,8 @@ class User(Document):
     profile_pic = StringField(default="default_profile.png")  # Path or URL to default pic
 
     meta = {
-        'collection': 'users',  # Make sure alias matches your connect()
+        'collection': 'users',
+         'db_alias': 'default' # Make sure alias matches your connect()
     }
 
 
