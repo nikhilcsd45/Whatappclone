@@ -1,65 +1,40 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List
+# app/models/user.py
+from mongoengine import Document, StringField, BooleanField, ListField, ReferenceField, FileField, ImageField
+from mongoengine.fields import ObjectIdField
 from datetime import datetime
-from bson import ObjectId
+from mongoengine import DateTimeField
 
-class PyObjectId(ObjectId):
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
 
-    @classmethod
-    def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
 
-# ✅ User schema
-class User(BaseModel):
-    id: Optional[PyObjectId] = Field(alias="_id")
-    phone: str
-    name: str
-    joined_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+class User(Document):
+    phone_number = StringField(required=True, unique=True)
+    name = StringField()
+    last_seen = BooleanField(default=True)
+    hashed_password = StringField(required=True)
+    prechats = ListField(ObjectIdField())  # List of ObjectIds of other users
+    profile_pic = StringField(default="default_profile.png")  # Path or URL to default pic
 
-# ✅ One-to-one message schema
-class Message(BaseModel):
-    id: Optional[PyObjectId] = Field(alias="_id")
-    sender_id: str
-    receiver_id: str
-    message: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    meta = {'collection': 'users'}
 
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
 
-# ✅ Group message schema
-class GroupMessage(BaseModel):
-    id: Optional[PyObjectId] = Field(alias="_id")
-    group_id: str
-    sender_id: str
-    message: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+class Message(Document):
+    sender = ReferenceField(User, required=True)
+    receiver = ReferenceField(User, required=True)
+    content = StringField(required=True)
+    seen = BooleanField(default=False)
+    timestamp = DateTimeField(default=datetime.utcnow)
+    chat = ObjectIdField(required=True)  # Reference to Chat
 
-# ✅ Group schema
-class Group(BaseModel):
-    id: Optional[PyObjectId] = Field(alias="_id")
-    name: str
-    members: List[str]
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    meta = {'collection': 'messages'}
 
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+
+class Chat(Document):
+    members = ListField(ReferenceField(User), required=True)
+    is_group_chat = BooleanField(default=False)
+    group_name = StringField()
+    group_profile = StringField(default="default_group.png")  # path or URL to image
+    latest_message = ReferenceField(Message)
+
+    meta = {'collection': 'chats'}
