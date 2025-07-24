@@ -8,7 +8,6 @@ chat_router = APIRouter()
 async def create_chat(request: Request):
     form = await request.json()
     print("📥 Received form:", form)
-
     try:
         members_dict = form.get("members", {})
         member_ids = list(members_dict.values())
@@ -23,9 +22,10 @@ async def create_chat(request: Request):
         last_seen_time = None
         user_name = None
         user_phone = None
-
+        
         try:
             user = User.objects.get(phone_number=other_number)
+            print(user.name)
             last_seen_time = user.last_seen.isoformat() if user.last_seen else None
             user_name = user.name
             user_phone = user.phone_number

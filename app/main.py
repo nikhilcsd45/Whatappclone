@@ -19,37 +19,100 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Store connected clients 
+
 connected_clients: Dict[str, WebSocket] = {}
+
+from fastapi import WebSocket, WebSocketDisconnect
+from typing import Dict, List
+import json
+
+connected_clients: Dict[str, List[WebSocket]] = {}  # Now supports multiple sockets per user
+
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    number = None  # Initialize in outer scope so we can access it on disconnect
+    number = None
 
     try:
-        # First message should be a JSON string like {"type":"connect", "user":"1234567899"}
+        # Step 1: Identify user
         user_info_str = await websocket.receive_text()
         user_info = json.loads(user_info_str)
-        number = user_info["user"]
+        number = user_info.get("user")
 
+        if not number:
+            await websocket.send_text("❌ 'user' field is required.")
+            await websocket.close()
+            return
+
+        # Add websocket to list for this user
         if number in connected_clients:
-            print(f"[UPDATE] Existing user '{number}' reconnected. Updating WebSocket.")
+            connected_clients[number].append(websocket)
+            print(f"[UPDATE] Added new connection for '{number}'")
         else:
-            print(f"[NEW] New user '{number}' connected.")
+            connected_clients[number] = [websocket]
+            print(f"[NEW] New user '{number}' connected")
 
-        connected_clients[number] = websocket
         print(f"[CONNECTED USERS] {list(connected_clients.keys())}")
+        await websocket.send_text(f"✅ Connected as {number}")
 
-        # Listen for incoming messages
+        # Step 2: Chat loop
         while True:
-            data = await websocket.receive_text()
-            print(f"[RECEIVED] from {number}: {data}")
-            await websocket.send_text(f"Echo: {data}")
+            raw_data = await websocket.receive_text()
+            print(f"[RECEIVED] from {number}: {raw_data}")
+
+            try:
+                message_data = json.loads(raw_data)
+                print("message_data:", message_data)
+            except json.JSONDecodeError:
+                await websocket.send_text("❌ Invalid JSON format.")
+                continue
+
+            msg_type = message_data.get("type")
+
+            if msg_type == "message":
+                inner = message_data.get("content", {})
+                sender = inner.get("sender")
+                receiver = str(inner.get("receiver")).strip()
+                content = inner.get("content")
+                chat_id = inner.get("chatId")
+                timestamp = inner.get("timestamp")
+
+                print(f"[CHAT] {sender} ➡ {receiver}: {content}")
+                print(f"[LOOKUP] Trying to send to receiver: {receiver}")
+                print(f"[CONNECTED CLIENTS KEYS] {list(connected_clients.keys())}")
+
+                if receiver in connected_clients:
+                    for sock in connected_clients[receiver]:
+                        try:
+                            await sock.send_text(json.dumps({
+                                "from": sender,
+                                "message": content,
+                                "chatId": chat_id,
+                                "timestamp": timestamp
+                            }))
+                        except Exception as e:
+                            print(f"[ERROR] Failed to send to one socket: {e}")
+                    print(f"[SENT] ✅ Message sent to all sockets of {receiver}")
+                else:
+                    await websocket.send_text("⚠️ Recipient is not online.")
+                    print(f"[FAILED] ❌ {receiver} is not in connected_clients")
+            else:
+                await websocket.send_text("❓ Unknown message type.")
 
     except WebSocketDisconnect:
         print(f"[DISCONNECTED] user: {number}")
-        if number:
-            connected_clients.pop(number, None)
+        if number and number in connected_clients:
+            try:
+                connected_clients[number].remove(websocket)
+                print(f"[CLEANUP] Removed socket from {number}")
+                if not connected_clients[number]:
+                    del connected_clients[number]
+                    print(f"[CLEANUP] No sockets left for {number}, removed from list")
+            except ValueError:
+                pass
+
+
+
 
 
 @app.post("/getUser")
