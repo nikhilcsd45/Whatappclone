@@ -8,7 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.models.models import User
 from app.db import connection
 app = FastAPI()
-app = FastAPI()
 @app.get("/")
 def hello():
   return "mess"
@@ -82,7 +81,3 @@ async def find_user(request:Request):
         "user": user_dict
     }
 
-
-# @app.post("/chat")
-# async def chat(websoket:WebSocket):
-  

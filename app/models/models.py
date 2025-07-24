@@ -26,10 +26,10 @@ class Message(Document):
     sender = ReferenceField(User, required=True)
     receiver = ReferenceField(User, required=True)
     content = StringField(required=True)
-    seen = BooleanField(default=False)
+    seen = DateTimeField()
     timestamp = DateTimeField(default=datetime.utcnow)
     chat = ObjectIdField(required=True)  # Reference to Chat
-
+    delivered=BooleanField(default=False)
     meta = {'collection': 'messages'}
 
 
