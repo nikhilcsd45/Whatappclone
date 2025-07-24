@@ -3,10 +3,7 @@ from app.models.models import User  # Adjust import as per your structure
 from mongoengine import NotUniqueError
 import traceback
 
-
-
 auth_router = APIRouter()
-
 @auth_router.post("/signup")
 async def signup(request: Request):
     form = await request.json()
@@ -30,12 +27,20 @@ async def signup(request: Request):
         print("Database Name:", collection.database.name)
         user.save()
 
+        # Convert MongoEngine document to dictionary
+        user_dict = user.to_mongo().to_dict()
+
+        # Remove sensitive fields
+        user_dict.pop("password", None)
+        user_dict["_id"] = str(user_dict["_id"])  # convert ObjectId to string
+
         return {
             "message": "User registered successfully",
-            "inserted_id": str(user.id)
+            "user": user_dict
         }
+        
 
-    except NotUniqueError:
+    except NotUniqueError:  
         raise HTTPException(status_code=400, detail="Phone number already exists")
     except Exception as e:
         print("Exception while saving user:", e)

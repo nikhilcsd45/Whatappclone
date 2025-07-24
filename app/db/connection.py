@@ -15,4 +15,7 @@ connect(
     host=MongoUri,
     alias="default"          # ✅ Use alias='default' for simplicity
 )
+
 print("Connected via MongoEngine!")
+
+
