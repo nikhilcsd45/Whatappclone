@@ -1,5 +1,5 @@
 import json
-from typing import Dict
+from typing import Dict,List
 from fastapi import FastAPI, WebSocket,Request,HTTPException
 from app.router.authrouter import auth_router
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,11 +20,6 @@ app.add_middleware(
 )
 
 
-connected_clients: Dict[str, WebSocket] = {}
-
-from fastapi import WebSocket, WebSocketDisconnect
-from typing import Dict, List
-import json
 
 connected_clients: Dict[str, List[WebSocket]] = {}  # Now supports multiple sockets per user
 
@@ -80,8 +75,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 print(f"[CHAT] {sender} ➡ {receiver}: {content}")
                 print(f"[LOOKUP] Trying to send to receiver: {receiver}")
                 print(f"[CONNECTED CLIENTS KEYS] {list(connected_clients.keys())}")
-
+                
+                for sockets in connected_clients.values():
+                    for sock in sockets:
+                        await sock.send_text(json.dumps({
+                                    "from": sender,
+                                    "message": content,
+                                    "chatId": chat_id,
+                                    "timestamp": timestamp
+                                }))
+                    print("data broadcast")
+                    
                 if receiver in connected_clients:
+                    
                     for sock in connected_clients[receiver]:
                         try:
                             await sock.send_text(json.dumps({
@@ -126,7 +132,7 @@ async def find_user(request:Request):
         raise HTTPException(status_code=400, detail="Phone number and password are required")
 
     # ✅ Check if user exists (phone number matches)
-    user = User.objects(phone_number=phone_num).first()
+    user = User.__objects(phone_number=phone_num).first()
     print("user:",user)
 
     if not user:
@@ -141,4 +147,6 @@ async def find_user(request:Request):
         "message": "user found ",
         "user": user_dict
     }
+
+
 
