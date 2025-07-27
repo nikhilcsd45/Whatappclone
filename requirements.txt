@@ -9,4 +9,8 @@ python-dotenv
 pymongo
 mongoengine
 redis
+uvicorn[standard]
+
+
+
 

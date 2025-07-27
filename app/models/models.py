@@ -10,8 +10,7 @@ class User(Document):
     last_seen = DateTimeField()
     hashed_password = StringField(required=True)
     prechats = ListField(ObjectIdField())  # List of ObjectIds of other users
-    profile_pic = StringField(default="default_profile.png")  # Path or URL to default pic
-    prev_chat=ListField(ObjectIdField()) 
+    profile_pic = StringField(default="https://res.cloudinary.com/expensetracker45/image/upload/v1753379224/ChatGPT_Image_Jul_24_2025_11_14_00_PM_dbbhzd.png")  # Path or URL to default pic
     meta = {
         'collection': 'users',
          'db_alias': 'default' # Make sure alias matches your connect()

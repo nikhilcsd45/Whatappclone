@@ -14,11 +14,12 @@ async def find_user(request:Request):
         raise HTTPException(status_code=400, detail="Phone number and password are required")
     user = User.objects(phone_number=phone_num).first()
     print("user:",user)
-
+    
     if not user:
         raise HTTPException(status_code=404, detail="Number not Registered")
     user_dict = user.to_mongo().to_dict()
     user_dict.pop("hashed_password", None)
+    user_dict.pop("prechats", None)
     user_dict["_id"] = str(user_dict["_id"])
     return {
         "message": "user found ",
