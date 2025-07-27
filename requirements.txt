@@ -8,5 +8,5 @@ passlib[bcrypt]
 python-dotenv
 pymongo
 mongoengine
-
+redis
 

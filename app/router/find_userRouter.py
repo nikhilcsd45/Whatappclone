@@ -4,9 +4,6 @@ from app.models.models import User
 from app.db import connection ###required
 
 getUser_router=APIRouter()
-
-
-
 @getUser_router.post("/getUser")
 async def find_user(request:Request):
     form = await request.json()
@@ -27,3 +24,4 @@ async def find_user(request:Request):
         "message": "user found ",
         "user": user_dict
     }
+
