@@ -3,66 +3,86 @@ from app.models.models import User, Chat, Message
 from bson import ObjectId
 from mongoengine.connection import get_db
 from mongoengine.errors import DoesNotExist
+from fastapi import APIRouter, Request, HTTPException
+from app.models.models import User
+from mongoengine.errors import DoesNotExist, ValidationError
+import traceback
 getChats_router = APIRouter()
-
-
 
 @getChats_router.post("/getChats")
 async def getChats(request: Request):
-    data = await request.json()
-    number = data.get("number")
+    try:
+        data = await request.json()
+        number = data.get("number")
 
-    user = User.objects(phone_number=number).only("prechats").first()
-    print(user.prechats)
-    if not user:
-        return {"error": "User not found"}
+        if not number:
+            raise HTTPException(status_code=400, detail="Phone number is required.")
 
-    pipeline = [
-        {"$match": {"phone_number": number}},
-        {"$unwind": "$prechats"},  # each item has chat_id, name, profile_pic
+        # Check if user exists
+        try:
+            user = User.objects(phone_number=number).only("prechats").first()
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found.")
+        except (DoesNotExist, ValidationError) as e:
+            raise HTTPException(status_code=404, detail="User fetch failed.") from e
 
-        # Step 1: Lookup chat details from chats collection
-        {
-            "$lookup": {
-                "from": "chats",
-                "localField": "prechats.chat_id",
-                "foreignField": "_id",
-                "as": "chat_info"
+        print("✅ User prechats:", user.prechats)
+
+        # Define the aggregation pipeline
+        pipeline = [
+            {"$match": {"phone_number": number}},
+            {"$unwind": "$prechats"},
+            {
+                "$lookup": {
+                    "from": "chats",
+                    "localField": "prechats.chat_id",
+                    "foreignField": "_id",
+                    "as": "chat_info"
+                }
+            },
+            {"$unwind": "$chat_info"},
+            {
+                "$lookup": {
+                    "from": "messages",
+                    "let": {"chat_id": "$prechats.chat_id"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$chat_id", "$$chat_id"]}}},
+                        {"$sort": {"timestamp": -1}},
+                        {"$limit": 1}
+                    ],
+                    "as": "last_message"
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "chat_id": "$prechats.chat_id",
+                    "name": "$prechats.name",
+                    "profile_pic": "$prechats.profile_pic",
+                    "is_group_chat": "$chat_info.is_group_chat",
+                    "group_profile_pic": "$chat_info.group_profile",
+                    "latest_message": {"$arrayElemAt": ["$last_message.content", 0]},
+                    "last_seen": {"$arrayElemAt": ["$last_message.last_seen", 0]}
+                }
             }
-        },
-        {"$unwind": "$chat_info"},
+        ]
 
-        # Step 2: Lookup latest message from messages collection
-        {
-            "$lookup": {
-                "from": "messages",
-                "let": {"chat_id": "$prechats.chat_id"},
-                "pipeline": [
-                    {"$match": {"$expr": {"$eq": ["$chat_id", "$$chat_id"]}}},
-                    {"$sort": {"timestamp": -1}},
-                    {"$limit": 1}
-                ],
-                "as": "last_message"
-            }
-        },
+        # Run aggregation safely
+        try:
+            result = list(User.objects.aggregate(*pipeline))
+        except Exception as e:
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail="Aggregation failed.")
 
-        # Step 3: Format result
-        {
-            "$project": {
-                "_id": 0,
-                "chat_id": "$prechats.chat_id",
-                "name": "$prechats.name",
-                "profile_pic": "$prechats.profile_pic",
-                "is_group_chat": "$chat_info.is_group_chat",
-                "group_profile_pic": "$chat_info.group_profile",
-                "latest_message": {"$arrayElemAt": ["$last_message.content", 0]},
-                "last_seen": {"$arrayElemAt": ["$last_message.last_seen", 0]}
-            }
-        }
-    ]
+        return {"recentChats": result}
 
-    result = list(User.objects.aggregate(*pipeline))
-    return {"recentChats": result}
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": f"Unexpected error: {str(e)}"}
+
+
+ 
+
 
 # @getChats_router.post("/getChats")
 # async def getChats(request: Request):
