@@ -35,7 +35,7 @@ class Message(Document):
     sender_id = ReferenceField(User, required=True)
     receiver_id = ReferenceField(User, required=True)
     content = StringField(required=True)
-    last_seen = DateTimeField()
+    seen_by = DateTimeField()
     timestamp = DateTimeField(default=datetime.utcnow)
     chat_id = ReferenceField(Chat, required=True)  # ✅ Reference to Chat document
     delivered = BooleanField(default=False)

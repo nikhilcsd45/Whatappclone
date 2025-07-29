@@ -10,7 +10,6 @@ getChat_router = APIRouter()
 async def getChat(request: Request):
     data = await request.json()
     chat_id = data.get("chat_id")
-
     if not chat_id:
         raise HTTPException(status_code=400, detail="chat_id is required")
 

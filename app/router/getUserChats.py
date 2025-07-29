@@ -23,52 +23,98 @@ async def getChats(request: Request):
         if not user:
             raise HTTPException(status_code=404, detail="User not found.")
 
-        print("✅ User prechats:", user.prechats)
+        print("✅ User prechats:", user.prechats[0].name)  # just for debug
+
 
         pipeline = [
-            {"$match": {"phone_number": number}},
-            {"$unwind": "$prechats"},
-            {
-                "$lookup": {
-                    "from": "chats",
-                    "localField": "prechats.chat_id",
-                    "foreignField": "_id",
-                    "as": "chat_info"
-                }
-            },
-            {"$unwind": "$chat_info"},
-            {
-                "$lookup": {
-                    "from": "messages",
-                    "let": {"chat_id": "$prechats.chat_id"},
-                    "pipeline": [
-                        {"$match": {"$expr": {"$eq": ["$chat_id", "$$chat_id"]}}},
-                        {"$sort": {"timestamp": -1}},
-                        {"$limit": 1}
-                    ],
-                    "as": "last_message"
-                }
-            },
-            {
-                "$project": {
-                    "_id": 0,
-                    "chat_id": {"$toString": "$prechats.chat_id"},  # stringify ObjectId
-                    "name": "$prechats.name",
-                    "profile_pic": "$prechats.profile_pic",
-                    "is_group_chat": "$chat_info.is_group_chat",
-                    "group_profile_pic": "$chat_info.group_profile",
-                    "latest_message": {"$arrayElemAt": ["$last_message.content", 0]},
-                    "last_seen": {"$arrayElemAt": ["$last_message.last_seen", 0]},
-                    "timestamp": {"$arrayElemAt": ["$last_message.timestamp", 0]}
+    {"$match": {"phone_number": number}},
+    {"$unwind": "$prechats"},
+
+    # ✅ Lookup Chat using prechats.chat_id
+    {
+        "$lookup": {
+            "from": "chats",
+            "localField": "prechats.chat_id",
+            "foreignField": "_id",
+            "as": "chat_info"
+        }
+    },
+    {"$unwind": "$chat_info"},
+
+    # ✅ Lookup latest message for the chat
+    {
+        "$lookup": {
+            "from": "messages",
+            "let": {"chat_id": "$prechats.chat_id"},
+            "pipeline": [
+                {"$match": {"$expr": {"$eq": ["$chat_id", "$$chat_id"]}}},
+                {"$sort": {"timestamp": -1}},
+                {"$limit": 1}
+            ],
+            "as": "last_message"
+        }
+    },
+
+    # ✅ Get the other member's number
+    {
+        "$addFields": {
+            "other_member": {
+                "$first": {
+                    "$filter": {
+                        "input": "$chat_info.members",
+                        "as": "member",
+                        "cond": {"$ne": ["$$member", number]}
+                    }
                 }
             }
-        ]
+        }
+    },
+
+    # ✅ Lookup other member's last_seen
+    {
+        "$lookup": {
+            "from": "users",
+            "localField": "other_member",
+            "foreignField": "phone_number",
+            "as": "other_user_info"
+        }
+    },
+    {"$unwind": {"path": "$other_user_info", "preserveNullAndEmptyArrays": True}},
+
+    # ✅ Final projection
+    {
+        "$project": {
+            "_id": 0,
+            "chat_id": {"$toString": "$prechats.chat_id"},
+            "name": "$prechats.name",
+            "profile_pic": "$prechats.profile_pic",
+            "is_group_chat": "$chat_info.is_group_chat",
+            "other_user_number": "$other_member",
+            "last_seen": "$other_user_info.last_seen",
+            "latest_message": {
+                "$cond": {
+                    "if": {"$gt": [{"$size": "$last_message"}, 0]},
+                    "then": {"$arrayElemAt": ["$last_message.content", 0]},
+                    "else": ""
+                }
+            },
+            "timestamp": {
+                "$cond": {
+                    "if": {"$gt": [{"$size": "$last_message"}, 0]},
+                    "then": {"$arrayElemAt": ["$last_message.timestamp", 0]},
+                    "else": ""
+                }
+            }
+        }
+    }
+]
 
         result = list(User.objects.aggregate(*pipeline))
-
+        print("results:",result)
         return {"recentChats": result}
 
     except Exception as e:
+        import traceback
         traceback.print_exc()
         return {"error": f"Unexpected error: {str(e)}"}
 
