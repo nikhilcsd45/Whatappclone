@@ -16,7 +16,7 @@ async def signup(request: Request):
             name=form.get("name", ""),
             hashed_password=form["password"],
             prechats=[],
-            profile_pic=form.get("profile_pic", "default_profile.png")
+            profile_pic=form.get("profile_pic")
         )
 
         print(user.to_mongo().to_dict())
