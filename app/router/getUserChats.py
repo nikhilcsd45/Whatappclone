@@ -13,6 +13,7 @@ async def getChats(request: Request):
     number = data.get("number")
 
     user = User.objects(phone_number=number).only("prechats").first()
+    print(user.prechats)
     if not user:
         return {"error": "User not found"}
 

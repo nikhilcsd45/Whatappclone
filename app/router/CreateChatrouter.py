@@ -4,12 +4,10 @@ from mongoengine.errors import DoesNotExist
 import datetime  
 from fastapi import HTTPException
 import traceback
-
 import logging
 from mongoengine.connection import get_db
 chat_router = APIRouter()
 logger = logging.getLogger(__name__)
-
 @chat_router.post("/addChat")
 async def create_chat(request: Request):
     form = await request.json()
@@ -21,7 +19,6 @@ async def create_chat(request: Request):
         is_group_chat = form.get("is_group_chat", False)
         group_name = form.get("group_name")
         group_profile = form.get("group_profile", "default_group.png")
-        
         other_number = members_dict.get("number")
         current_number=members_dict.get("currentUser")
         last_seen_time = None
@@ -38,14 +35,11 @@ async def create_chat(request: Request):
             user_name = "Unknown"
             user_phone = other_number or "Unknown"
             print(f"⚠️ Failed to fetch user info for {other_number}: {e}")
-
-
         try:
             db = get_db()
         except Exception as e:
             print("❌ Failed to connect to database:", str(e))
             raise HTTPException(status_code=500, detail="Database connection failed")
-
         try:
             match_chat_pipeline = [
                 {
@@ -60,9 +54,7 @@ async def create_chat(request: Request):
                     }
                 }
             ]
-
             stored_chat_result = list(db.chats.aggregate(match_chat_pipeline))
-
             if stored_chat_result:
                 stored_chat = stored_chat_result[0]
                 print(f"ℹ️ Found existing 1-on-1 chat: {stored_chat['_id']}")
@@ -70,12 +62,10 @@ async def create_chat(request: Request):
                     "chat_id": str(stored_chat["_id"]),
                     "message": "✅ 1-on-1 Chat already exists"
                 }
-
         except Exception as e:
             print("❌ Error during chat existence check via aggregation:")
             traceback.print_exc()
             raise HTTPException(status_code=500, detail="Error checking for existing chat")
-
         try:
             # ✅ Create new chat
             new_chat = Chat(
@@ -94,10 +84,16 @@ async def create_chat(request: Request):
         # Replace in your addChat route
         try:
             current_number = members_dict.get("currentUser")
+            name = members_dict.get("name")
+            profile_pic = members_dict.get("profile_pic")
+
             user2 = User.objects.get(phone_number=current_number)
-            print("---------,",user2)
-            
-            user2.update(push__prechats=new_chat.id)
+            user2.update(push__prechats={
+            "chat_id": new_chat.id,
+            "name": name,
+            "profile_pic": profile_pic
+        })
+
             print("--",user2)
             print(f"✅ Chat ID {new_chat.id} added to user {user2.phone_number}'s prechats")
         except Exception as e:
