@@ -20,6 +20,8 @@ def serialize_mongo_document(doc):
     else:
         return doc
 
+from fastapi import HTTPException
+
 @auth_router.post("/signup")
 async def signup(request: Request):
     try:
@@ -34,24 +36,14 @@ async def signup(request: Request):
             profile_pic=form.get("profile_pic")
         )
 
-        print(user.to_mongo().to_dict())
-        collection = user._get_collection()
-        print("Collection Name:", collection.name)
-        print("Database Name:", collection.database.name)
-
         try:
             user.save()
         except NotUniqueError:
-            return {
-                "success": False,
-                "error": "Phone number already exists",
-                "code": 409
-            }
+            raise HTTPException(
+                status_code=409,
+                detail="Phone number already exists"
+            )
 
-        user_dict = user.to_mongo().to_dict()
-        user_dict.pop("hashed_password", None)
-        user_dict["_id"] = str(user_dict["_id"])
-        
         user_dict = serialize_mongo_document(user.to_mongo().to_dict())
         user_dict.pop("hashed_password", None)
 
@@ -60,28 +52,26 @@ async def signup(request: Request):
             "user": user_dict
         }
 
-
     except ValidationError as ve:
-        return {
-            "success": False,
-            "error": f"Validation error: {str(ve)}",
-            "code": 422
-        }
+        raise HTTPException(
+            status_code=422,
+            detail=f"Validation error: {str(ve)}"
+        )
 
     except KeyError as ke:
-        return {
-            "success": False,
-            "error": f"Missing field: {str(ke)}",
-            "code": 400
-        }
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing field: {str(ke)}"
+        )
 
     except Exception as e:
         traceback.print_exc()
-        return {
-            "success": False,
-            "error": f"Unexpected error: {str(e)}",
-            "code": 500
-        }
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error: {str(e)}"
+        )
+        
+        
         
 @auth_router.post("/login")
 async def login(request: Request):
@@ -93,30 +83,23 @@ async def login(request: Request):
         password = form.get("password")
 
         if not phone_num or not password:
-            return {
-                "success": False,
-                "error": "Phone number and password are required",
-                "code": 400
-            }
+            raise HTTPException(
+                status_code=400,
+                detail="Phone number and password are required"
+            )
 
         user = User.objects(phone_number=phone_num).first()
         if not user:
-            return {
-                "success": False,
-                "error": "User not found. Please sign up first.",
-                "code": 404
-            }
+            raise HTTPException(
+                status_code=404,
+                detail="User not found. Please sign up first."
+            )
 
         if user.hashed_password != password:
-            return {
-                "success": False,
-                "error": "Incorrect password",
-                "code": 401
-            }
-
-        user_dict = user.to_mongo().to_dict()
-        user_dict.pop("hashed_password", None)
-        user_dict["_id"] = str(user_dict["_id"])
+            raise HTTPException(
+                status_code=401,
+                detail="Incorrect password"
+            )
 
         user_dict = serialize_mongo_document(user.to_mongo().to_dict())
         user_dict.pop("hashed_password", None)
@@ -126,13 +109,14 @@ async def login(request: Request):
             "user": user_dict
         }
 
+    except HTTPException:
+        raise  # re-raise the expected error
     except Exception as e:
         traceback.print_exc()
-        return {
-            "success": False,
-            "error": f"Unexpected error: {str(e)}",
-            "code": 500
-        }
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error: {str(e)}"
+        )
 
 # @auth_router.post("/signup")
 # async def signup(request: Request):

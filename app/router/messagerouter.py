@@ -5,28 +5,42 @@ from datetime import datetime
 from bson import ObjectId
 import json
 from app.helper.flush_message_to_db import flush_messages_to_db
-message_router = APIRouter()
 from fastapi import APIRouter, Request, HTTPException
 from mongoengine.connection import get_db
 from bson import ObjectId
 import traceback
+message_router = APIRouter()
+from fastapi import APIRouter, Request
+from bson import ObjectId
+import traceback
+from app.db.redis import redis_client  # Redis & DB connections
+from datetime import datetime
+import redis.asyncio as redis
+
+redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
 
 message_router = APIRouter()
 from fastapi import APIRouter, Request, HTTPException
-from mongoengine.connection import get_db
 from bson import ObjectId
-import traceback
+from datetime import datetime
+import json, traceback
+
+from app.db.redis import redis_client  # ✅ Sync Redis client
 
 message_router = APIRouter()
+
 
 @message_router.post("/getChat")
 async def getMessage(request: Request):
     try:
         data = await request.json()
         chat_id_str = data.get("chat_id")
+        current_user_number = data.get("number")  # 🧠 Required to resolve "It's You" logic
 
-        if not chat_id_str:
-            return {"success": False, "message": "chat_id is required"}
+        print(f"📥 Request to /getChat: {data}")
+
+        if not chat_id_str or not current_user_number:
+            return {"success": False, "message": "chat_id and user number are required"}
 
         try:
             chat_id = ObjectId(chat_id_str)
@@ -35,9 +49,9 @@ async def getMessage(request: Request):
 
         db = get_db()
 
+        # 🧪 MongoDB Aggregation to fetch chat and messages
         pipeline = [
             {"$match": {"_id": chat_id}},
-
             {
                 "$lookup": {
                     "from": "messages",
@@ -58,13 +72,10 @@ async def getMessage(request: Request):
             },
             {
                 "$project": {
-                    "_id": 0,
-                    "members": {
-                        "$slice": ["$members", 2]
-                    },
-                    "name": {"$arrayElemAt": ["$members", 2]},
-                    "profile_pic": {"$arrayElemAt": ["$members", 3]},
+                    "members": 1,
                     "is_group_chat": 1,
+                    "group_name": 1,
+                    "group_profile": 1,
                     "messages": {
                         "$map": {
                             "input": "$messages",
@@ -83,14 +94,53 @@ async def getMessage(request: Request):
         ]
 
         result = list(db.chats.aggregate(pipeline))
+        print(f"📦 Mongo Result: {result}")
 
         if not result:
             return {"success": False, "message": "Chat not found"}
 
+        chat = result[0]
+        members = chat["members"]
+        is_group = chat["is_group_chat"]
+
+        # 🎭 Resolve name and profile_pic
+        if is_group:
+            name = chat.get("group_name", "Group")
+            profile_pic = chat.get("group_profile", "")
+        else:
+            other_user_number = [m for m in members if m != current_user_number]
+            if other_user_number:
+                user_doc = db.users.find_one({"phone_number": other_user_number[0]})
+                name = user_doc.get("name", "Unknown") if user_doc else "Unknown"
+                profile_pic = user_doc.get("profile_pic", "")
+            else:
+                name = "It's You"
+                profile_pic = ""
+
+        # 🧊 Load cached messages from Redis (if any)
+        redis_key = f"chat:{chat_id_str}:messages"
+        print(f"🔑 Redis Key: {redis_key}")
+        cached_messages = redis_client.lrange(redis_key, 0, -1)
+        print(f"🧊 Redis Cached Messages: {cached_messages}")
+
+        redis_msgs = []
+        for msg in cached_messages:
+            try:
+                msg_dict = json.loads(msg)
+                redis_msgs.append(msg_dict)
+            except Exception as e:
+                print(f"[❌ REDIS ERROR] Failed to load cached msg: {e}")
+
+        # 🧪 Merge and sort all messages
+        all_messages = chat.get("messages", []) + redis_msgs
+        all_messages.sort(key=lambda x: x["timestamp"])
+
         return {
-            "success": True,
-            "message": "Chat fetched successfully",
-            "data": result[0]
+            "is_group_chat": is_group,
+            "members": members,
+            "name": name,
+            "profile_pic": profile_pic,
+            "messages": all_messages
         }
 
     except Exception as e:
@@ -100,9 +150,6 @@ async def getMessage(request: Request):
             "message": "Internal server error",
             "error": str(e)
         }
-
-    
-
 
 @message_router.post("/getMessage")
 async def message(request: Request):
@@ -135,9 +182,7 @@ async def message(request: Request):
         # Auto-flush if > 50 messages
         if await redis_client.llen(redis_key) >= 50:
             await flush_messages_to_db(chat_id)
-
         return {"status": "✅ Message cached in Redis"}
-
     except Exception as e:
         print("❌ Error in message storing:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
