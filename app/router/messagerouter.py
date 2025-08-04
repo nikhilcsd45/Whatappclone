@@ -1,55 +1,38 @@
-from fastapi import APIRouter, Request, HTTPException
-from app.models.models import Message, User, Chat
-from app.db.redis import *
-from datetime import datetime
+from fastapi import APIRouter, Request, status
+from fastapi.responses import JSONResponse
 from bson import ObjectId
-import json
-from app.helper.flush_message_to_db import flush_messages_to_db
-from fastapi import APIRouter, Request, HTTPException
 from mongoengine.connection import get_db
-from bson import ObjectId
-import traceback
-message_router = APIRouter()
-from fastapi import APIRouter, Request
-from bson import ObjectId
-import traceback
-from app.db.redis import redis_client  # Redis & DB connections
-from datetime import datetime
-import redis.asyncio as redis
-
-redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
-
-message_router = APIRouter()
-from fastapi import APIRouter, Request, HTTPException
-from bson import ObjectId
-from datetime import datetime
+from app.db.redis import redis_client
 import json, traceback
 
-from app.db.redis import redis_client  # ✅ Sync Redis client
-
 message_router = APIRouter()
-
 
 @message_router.post("/getChat")
 async def getMessage(request: Request):
     try:
         data = await request.json()
         chat_id_str = data.get("chat_id")
-        current_user_number = data.get("number")  # 🧠 Required to resolve "It's You" logic
+        current_user_number = data.get("number")
 
-        print(f"📥 Request to /getChat: {data}")
+        print(f" Incoming Request: {data}")
 
         if not chat_id_str or not current_user_number:
-            return {"success": False, "message": "chat_id and user number are required"}
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "message": "chat_id and number are required"}
+            )
 
         try:
             chat_id = ObjectId(chat_id_str)
         except Exception:
-            return {"success": False, "message": "Invalid chat_id format"}
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"success": False, "message": "Invalid chat_id format"}
+            )
 
         db = get_db()
 
-        # 🧪 MongoDB Aggregation to fetch chat and messages
+        # \ud83e\uddf0 Aggregation to fetch chat and related messages
         pipeline = [
             {"$match": {"_id": chat_id}},
             {
@@ -94,96 +77,69 @@ async def getMessage(request: Request):
         ]
 
         result = list(db.chats.aggregate(pipeline))
-        print(f"📦 Mongo Result: {result}")
+        print(f" Mongo Aggregated Chat: {result}")
 
         if not result:
-            return {"success": False, "message": "Chat not found"}
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"success": False, "message": "Chat not found"}
+            )
 
         chat = result[0]
-        members = chat["members"]
-        is_group = chat["is_group_chat"]
+        raw_members = chat.get("members", [])
+        is_group = chat.get("is_group_chat", False)
 
-        # 🎭 Resolve name and profile_pic
+        # \ud83c\udfad Name/Profile resolution
         if is_group:
             name = chat.get("group_name", "Group")
             profile_pic = chat.get("group_profile", "")
         else:
-            other_user_number = [m for m in members if m != current_user_number]
-            if other_user_number:
-                user_doc = db.users.find_one({"phone_number": other_user_number[0]})
-                name = user_doc.get("name", "Unknown") if user_doc else "Unknown"
-                profile_pic = user_doc.get("profile_pic", "")
-            else:
-                name = "It's You"
-                profile_pic = ""
+            # Assume name and profile_pic are in 3rd and 4th index of raw_members
+            name = raw_members[2] if len(raw_members) > 2 else "Unknown"
+            profile_pic = raw_members[3] if len(raw_members) > 3 else ""
 
-        # 🧊 Load cached messages from Redis (if any)
+        # Sanitize members: keep only phone numbers
+        members = [num for num in raw_members if isinstance(num, str) and num.isdigit()]
+
+        # \ud83d\udd11 Load Redis cached messages
         redis_key = f"chat:{chat_id_str}:messages"
-        print(f"🔑 Redis Key: {redis_key}")
-        cached_messages = redis_client.lrange(redis_key, 0, -1)
-        print(f"🧊 Redis Cached Messages: {cached_messages}")
+        print(f" Redis Key: {redis_key}")
+        try:
+            cached_raw = await redis_client.lrange(redis_key, 0, -1)
+            print(f" Redis Cached Raw Messages: {cached_raw}")
+        except Exception as e:
+            print(f"Redis error: {e}")
+            cached_raw = []
 
-        redis_msgs = []
-        for msg in cached_messages:
+        cached_messages = []
+        for msg in cached_raw:
             try:
                 msg_dict = json.loads(msg)
-                redis_msgs.append(msg_dict)
+                cached_messages.append(msg_dict)
             except Exception as e:
-                print(f"[❌ REDIS ERROR] Failed to load cached msg: {e}")
+                print(f" Redis JSON parse error: {e}")
 
-        # 🧪 Merge and sort all messages
-        all_messages = chat.get("messages", []) + redis_msgs
-        all_messages.sort(key=lambda x: x["timestamp"])
+        # \ud83d\udce8 Combine all messages and sort
+        all_messages = chat.get("messages", []) + cached_messages
+        all_messages.sort(key=lambda x: x.get("timestamp"))
 
-        return {
-            "is_group_chat": is_group,
-            "members": members,
-            "name": name,
-            "profile_pic": profile_pic,
-            "messages": all_messages
-        }
+        print(f" Final Combined Messages: {all_messages}")
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "success": True,
+                "is_group_chat": is_group,
+                "members": members,
+                "name": name,
+                "profile_pic": profile_pic,
+                "messages": all_messages
+            }
+        )
 
     except Exception as e:
-        traceback.print_exc()
-        return {
-            "success": False,
-            "message": "Internal server error",
-            "error": str(e)
-        }
-
-@message_router.post("/getMessage")
-async def message(request: Request):
-    try:
-        data = await request.json()
-        print("📥 Incoming message:", data)
-        sender_id = data.get("sender_id")
-        receiver_id = data.get("receiver_id")
-        content = data.get("content")
-        chat_id = data.get("chat_id")
-        timestamp = data.get("timestamp") or datetime.utcnow().isoformat()
-
-        if not all([sender_id, receiver_id, content, chat_id]):
-            raise HTTPException(status_code=400, detail="Missing required fields")
-
-        # Prepare message for Redis
-        message_data = {
-            "sender": sender_id,
-            "receiver": receiver_id,
-            "content": content,
-            "timestamp": timestamp,
-            "chat_id": chat_id,
-            "delivered": False,
-        }
-        # Store in Redis temporarily
-        redis_key = f"chat:{chat_id}:messages"
-        redis_client.rpush(redis_key, json.dumps(message_data))
-        print(f"💾 Stored in Redis → {redis_key}")
-
-        # Auto-flush if > 50 messages
-        if await redis_client.llen(redis_key) >= 50:
-            await flush_messages_to_db(chat_id)
-        return {"status": "✅ Message cached in Redis"}
-    except Exception as e:
-        print("❌ Error in message storing:", str(e))
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-
+        print(f" Unhandled Exception: {traceback.format_exc()}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "message": "Internal server error", "error": str(e)}
+        )
